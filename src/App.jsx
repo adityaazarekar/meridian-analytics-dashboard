@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo } from "react";
+import Papa from "papaparse"; 
 import "./App.css";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -7,7 +8,7 @@ import {
   PieChart, Pie, Cell, Treemap, ComposedChart, Legend, ReferenceLine, Brush
 } from "recharts";
 
-// ─── PALETTE ────────────────────────────────────────────────────────────────
+// ─── PALETTE & GICS COLORS ──────────────────────────────────────────────────
 const P = {
   bg:"#080c14",surface:"rgba(255,255,255,0.03)",card:"rgba(255,255,255,0.055)",
   border:"rgba(255,255,255,0.09)",
@@ -15,41 +16,36 @@ const P = {
   emerald:"#34d399",sky:"#38bdf8",rose:"#fb7185",violet:"#a78bfa",
   amber:"#fbbf24",slate:"#94a3b8",slateD:"#475569",white:"#f1f5f9",
 };
+
 const ACCENT=["#e8b84b","#34d399","#38bdf8","#fb7185","#a78bfa","#fbbf24","#f472b6","#4ade80"];
-const SECTORS=["Technology","Finance","Healthcare","Energy","Consumer","Industrial","Telecom","Materials"];
-const COUNTRIES=["United States","China","Japan","Germany","United Kingdom","India","France","Canada","South Korea","Brazil","Australia","Switzerland"];
-const COUNTRY_ISO={"United States":"🇺🇸","China":"🇨🇳","Japan":"🇯🇵","Germany":"🇩🇪","United Kingdom":"🇬🇧","India":"🇮🇳","France":"🇫🇷","Canada":"🇨🇦","South Korea":"🇰🇷","Brazil":"🇧🇷","Australia":"🇦🇺","Switzerland":"🇨🇭"};
-const SECTOR_COLORS=Object.fromEntries(SECTORS.map((s,i)=>[s,ACCENT[i]]));
-const COUNTRY_COLORS=Object.fromEntries(COUNTRIES.map((c,i)=>[c,ACCENT[i%ACCENT.length]]));
 
-// ─── DATA GENERATOR ─────────────────────────────────────────────────────────
+const GICS_COLORS = {
+  "Information Technology": "#38bdf8",
+  "Health Care": "#34d399",
+  "Financials": "#e8b84b",
+  "Consumer Discretionary": "#fb7185",
+  "Communication Services": "#a78bfa",
+  "Industrials": "#94a3b8",
+  "Consumer Staples": "#f472b6",
+  "Energy": "#fbbf24",
+  "Materials": "#a3e635",
+  "Real Estate": "#2dd4bf",
+  "Utilities": "#60a5fa"
+};
+
+// ─── HELPER FUNCTIONS ───────────────────────────────────────────────────────
 function rnd(a,b){return Math.random()*(b-a)+a;}
-function seed(s,a,b){const x=Math.sin(s*9301+49297)*233280;return a+(x-Math.floor(x))*(b-a);}
-const NAMES=["Atlas","Nova","Vega","Orion","Apex","Zenith","Helix","Stratos","Axiom","Crest","Lumio","Ferro","Arcis","Quasar","Plex"];
-const SUFFIXES=["Corp","Group","Holdings","Capital","Ventures","Systems","Partners","Labs","Global","Networks"];
 
-const COMPANIES=Array.from({length:180},(_,i)=>{
-  const sector=SECTORS[i%SECTORS.length];
-  const country=COUNTRIES[i%COUNTRIES.length];
-  const rev=seed(i,2,480);
-  const mc=rev*seed(i+100,1.5,18);
-  const earn=rev*seed(i+200,0.04,0.35);
-  return{
-    id:i,name:`${NAMES[i%15]} ${SUFFIXES[Math.floor(i/15)%10]}`,
-    sector,country,
-    capitalGravity:mc,revenueFlow:rev,netYield:earn,
-    valuationIndex:seed(i+300,9,90),sharePrice:seed(i+400,12,2800),
-    dividendRate:seed(i+500,0,0.07),liquidityScore:seed(i+600,20,98),
-    growthMomentum:seed(i+700,-8,42),riskCoefficient:seed(i+800,10,85),
-    marketPenetration:seed(i+900,5,95),efficiencyRatio:earn/rev,
-  };
-});
-
+// ─── DYNAMIC ROLLUP FUNCTIONS ───────────────────────────────────────────────
 function buildSectorRollup(companies){
-  return SECTORS.map(s=>{
+  const sectors = [...new Set(companies.map(c => c.sector))];
+  const SECTOR_COLORS = {};
+  sectors.forEach((s, i) => SECTOR_COLORS[s] = GICS_COLORS[s] || ACCENT[i % ACCENT.length]);
+
+  return sectors.map(s=>{
     const g=companies.filter(c=>c.sector===s);
     return{
-      sector:s,short:s.slice(0,4).toUpperCase(),
+      sector:s,short:s.slice(0,12),
       capitalGravity:g.reduce((a,c)=>a+c.capitalGravity,0),
       revenueFlow:g.reduce((a,c)=>a+c.revenueFlow,0),
       netYield:g.reduce((a,c)=>a+c.netYield,0),
@@ -57,15 +53,20 @@ function buildSectorRollup(companies){
       avgValuation:g.reduce((a,c)=>a+c.valuationIndex,0)/(g.length||1),
       avgGrowth:g.reduce((a,c)=>a+c.growthMomentum,0)/(g.length||1),
       avgLiquidity:g.reduce((a,c)=>a+c.liquidityScore,0)/(g.length||1),
-      color:SECTOR_COLORS[s],
+      color: SECTOR_COLORS[s],
     };
-  });
+  }).sort((a,b) => b.capitalGravity - a.capitalGravity);
 }
+
 function buildCountryRollup(companies){
-  return COUNTRIES.map(cn=>{
+  const countries = [...new Set(companies.map(c => c.country))];
+  const COUNTRY_COLORS = {};
+  countries.forEach((c, i) => COUNTRY_COLORS[c] = ACCENT[i % ACCENT.length]);
+
+  return countries.map(cn=>{
     const g=companies.filter(c=>c.country===cn);
     return{
-      country:cn,iso:COUNTRY_ISO[cn],flag:COUNTRY_ISO[cn],
+      country:cn,
       capitalGravity:g.reduce((a,c)=>a+c.capitalGravity,0),
       revenueFlow:g.reduce((a,c)=>a+c.revenueFlow,0),
       netYield:g.reduce((a,c)=>a+c.netYield,0),
@@ -75,20 +76,15 @@ function buildCountryRollup(companies){
       avgLiquidity:g.reduce((a,c)=>a+c.liquidityScore,0)/(g.length||1),
       avgRisk:g.reduce((a,c)=>a+c.riskCoefficient,0)/(g.length||1),
       efficiencyRatio:g.reduce((a,c)=>a+c.efficiencyRatio,0)/(g.length||1),
-      color:COUNTRY_COLORS[cn],
+      color: COUNTRY_COLORS[cn]
     };
   }).sort((a,b)=>b.capitalGravity-a.capitalGravity);
 }
-function buildTimeSeries(days=60){
-  return Array.from({length:days},(_,i)=>{
-    const base={day:i+1,label:`D${i+1}`};
-    SECTORS.slice(0,5).forEach((s,j)=>{base[s]=300+j*60+Math.sin(i/days*8+j)*80+rnd(-20,20);});
-    base.GlobalIndex=SECTORS.slice(0,5).reduce((a,s)=>a+(base[s]||0),0)/5;
-    return base;
-  });
-}
-function buildWaterfall(country){
-  const cr=buildCountryRollup(COMPANIES).find(c=>c.country===country)||buildCountryRollup(COMPANIES)[0];
+
+function buildWaterfall(companies, countryName){
+  const cr = buildCountryRollup(companies).find(c=>c.country===countryName) || buildCountryRollup(companies)[0];
+  if (!cr) return [];
+  
   const rev=cr.revenueFlow;
   const cogs=-rev*0.40;const opex=-rev*0.20;const tax=-(rev+cogs+opex)*0.22;const net=rev+cogs+opex+tax;
   const steps=[
@@ -103,14 +99,38 @@ function buildWaterfall(country){
     barVal:Math.abs(it.value),isPositive:it.value>=0,isTotal:i===0||i===steps.length-1,
   }));
 }
-const TIME_DATA=buildTimeSeries(60);
-const SECTOR_DATA=buildSectorRollup(COMPANIES);
-const COUNTRY_DATA=buildCountryRollup(COMPANIES);
-const HEAT_DATA=Array.from({length:7},(_,r)=>Array.from({length:12},(_,c)=>({row:r,col:c,value:rnd(5,100)})));
 
+function buildCompanyWaterfall(company){
+  const rev=company?.revenueFlow||0;
+  const cogs=-rev*0.42;
+  const opex=-rev*0.18;
+  const net=company?.netYield ?? (rev+cogs+opex);
+  const tax=net-(rev+cogs+opex);
+  const steps=[
+    {name:"Gross Revenue",value:rev,cumulative:rev},
+    {name:"Cost of Revenue",value:cogs,cumulative:rev+cogs},
+    {name:"Operating Costs",value:opex,cumulative:rev+cogs+opex},
+    {name:"Tax / Other",value:tax,cumulative:rev+cogs+opex+tax},
+    {name:"Net Yield",value:net,cumulative:net},
+  ];
+  return steps.map((it,i)=>({
+    ...it,i,base:i===0||i===steps.length-1?0:Math.min(steps[i-1].cumulative,it.cumulative),
+    barVal:Math.abs(it.value),isPositive:it.value>=0,isTotal:i===0||i===steps.length-1,
+  }));
+}
 
+function buildCompanySeries(company,days=50){
+  const base=company?.sharePrice||200;
+  const amp=Math.max(20,base*0.06);
+  const drift=(company?.growthMomentum||0)/days;
+  return Array.from({length:days},(_,i)=>({
+    i:i+1,
+    label:`D${i+1}`,
+    Price:base + Math.sin(i/6)*amp + Math.sin(i/11)*amp*0.4 + drift*i*10 + rnd(-amp*0.12,amp*0.12),
+  }));
+}
 
-// ─── TOOLTIP ────────────────────────────────────────────────────────────────
+// ─── VISUAL COMPONENTS (Spark, Gauge, Tooltip, etc.) ───────────────────────
 const TT=({active,payload,label})=>{
   if(!active||!payload?.length)return null;
   return(
@@ -126,7 +146,6 @@ const TT=({active,payload,label})=>{
   );
 };
 
-// ─── SPARKLINE ──────────────────────────────────────────────────────────────
 function Spark({data,color=P.gold,w=110,h=36}){
   if(!data?.length)return null;
   const mn=Math.min(...data),mx=Math.max(...data),range=mx-mn||1;
@@ -142,7 +161,6 @@ function Spark({data,color=P.gold,w=110,h=36}){
   );
 }
 
-// ─── ARC GAUGE ──────────────────────────────────────────────────────────────
 function Gauge({value,max=100,color=P.gold,size=88,label=""}){
   const r=size/2-9,circ=2*Math.PI*r,arc=circ*0.75,fill=arc*(Math.min(value,max)/max);
   return(
@@ -157,7 +175,6 @@ function Gauge({value,max=100,color=P.gold,size=88,label=""}){
   );
 }
 
-// ─── HEAT MAP ───────────────────────────────────────────────────────────────
 function HeatMap({data}){
   const days=["Mon","Tue","Wed","Thu","Fri","Sat","Sun"];
   const months=["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
@@ -178,16 +195,10 @@ function HeatMap({data}){
           ))}
         </div>
       ))}
-      <div style={{display:"flex",alignItems:"center",gap:5,marginTop:8,justifyContent:"flex-end"}}>
-        <span style={{fontSize:9,color:P.slateD}}>Low</span>
-        {[.1,.3,.5,.7,.9].map(v=><div key={v} style={{width:12,height:12,borderRadius:2,background:`rgba(232,184,75,${v})`}}/>)}
-        <span style={{fontSize:9,color:P.slateD}}>High</span>
-      </div>
     </div>
   );
 }
 
-// ─── WATERFALL ──────────────────────────────────────────────────────────────
 function Waterfall({items}){
   return(
     <ResponsiveContainer width="100%" height={210}>
@@ -205,7 +216,6 @@ function Waterfall({items}){
   );
 }
 
-// ─── CORR MATRIX ────────────────────────────────────────────────────────────
 function CorrMatrix(){
   const metrics=["Capital Gravity","Revenue Flow","Net Yield","Valuation","Share Price","Liquidity","Momentum","Risk"];
   const vals=[[1,.83,.76,.29,.64,.47,.35,-.21],[.83,1,.91,.18,.52,.39,.41,-.18],[.76,.91,1,.14,.48,.33,.38,-.15],[.29,.18,.14,1,.55,.22,.61,.43],[.64,.52,.48,.55,1,.31,.44,.19],[.47,.39,.33,.22,.31,1,.28,-.38],[.35,.41,.38,.61,.44,.28,1,-.52],[-.21,-.18,-.15,.43,.19,-.38,-.52,1]];
@@ -240,12 +250,54 @@ function CorrMatrix(){
   );
 }
 
-// ─── MAIN ───────────────────────────────────────────────────────────────────
+// ─── MAIN COMPONENT ─────────────────────────────────────────────────────────
 export default function App(){
-  const [tab,setTab]=useState("global");
-  const [sector,setSector]=useState("All");
-  const [country,setCountry]=useState("United States");
-  const [live,setLive]=useState({gi:4821,vol:68,momentum:73,heat:41});
+  const [data, setData] = useState([]); 
+  const [tab, setTab] = useState("global");
+  const [sector, setSector] = useState("All");
+  const [country, setCountry] = useState("United States");
+  const [companyQuery, setCompanyQuery] = useState("");
+  const [companyId, setCompanyId] = useState(null);
+  const [live, setLive] = useState({gi:4821,vol:68,momentum:73,heat:41});
+
+  // Load CSV Data
+  useEffect(() => {
+    Papa.parse("/companies.csv", {
+      download: true,
+      header: true,
+      skipEmptyLines: true,
+      complete: (results) => {
+        const formattedData = results.data.map((row, i) => {
+           // Convert large numbers to Billions (1e9)
+           const cap = parseFloat(row['marketcap'] || 0) / 1e9; 
+           const rev = parseFloat(row['revenue_ttm'] || 0) / 1e9;
+           const profit = parseFloat(row['earnings_ttm'] || 0) / 1e9;
+           
+           return {
+             id: i,
+             name: row['Name'] || "Unknown",
+             sector: row['Sector'] || "Industrials", 
+             country: row['country'] || "Unknown",
+             capitalGravity: cap,
+             revenueFlow: rev,
+             netYield: profit,
+             valuationIndex: rev ? cap / rev : 0,
+             sharePrice: parseFloat(row['price (GBP)'] || 0),
+             dividendRate: rnd(0, 0.07),
+             liquidityScore: rnd(20, 98),
+             growthMomentum: rnd(-10, 40),
+             riskCoefficient: rnd(10, 85),
+             efficiencyRatio: rev ? profit / rev : 0
+           };
+        });
+        
+        // Filter out completely dead/empty rows
+        const cleanData = formattedData.filter(d => d.name !== "Unknown" && d.capitalGravity > 0);
+        setData(cleanData);
+        if (cleanData.length > 0) setCountry(cleanData[0].country);
+      }
+    });
+  }, []);
 
   useEffect(()=>{
     const id=setInterval(()=>{
@@ -259,18 +311,44 @@ export default function App(){
     return()=>clearInterval(id);
   },[]);
 
-  const filtered=useMemo(()=>COMPANIES.filter(c=>sector==="All"||c.sector===sector),[sector]);
-  const sectorData=useMemo(()=>buildSectorRollup(filtered),[filtered]);
-  const countryData=useMemo(()=>buildCountryRollup(filtered),[filtered]);
-  const countryDetail=useMemo(()=>COUNTRY_DATA.find(c=>c.country===country)||COUNTRY_DATA[0],[country]);
-  const countryCompanies=useMemo(()=>COMPANIES.filter(c=>c.country===country),[country]);
-  const wfItems=useMemo(()=>buildWaterfall(country),[country]);
+  // Derived State (memoized)
+  const SECTORS = useMemo(() => [...new Set(data.map(c => c.sector))].sort(), [data]);
+  const COUNTRIES = useMemo(() => [...new Set(data.map(c => c.country))].sort(), [data]);
+  const SECTOR_COLORS = useMemo(() => {
+    const map = {};
+    SECTORS.forEach((s, i) => map[s] = GICS_COLORS[s] || ACCENT[i % ACCENT.length]);
+    return map;
+  }, [SECTORS]);
 
-  const totalCap=filtered.reduce((a,c)=>a+c.capitalGravity,0);
-  const totalRev=filtered.reduce((a,c)=>a+c.revenueFlow,0);
-  const avgVal=filtered.reduce((a,c)=>a+c.valuationIndex,0)/(filtered.length||1);
-  const posGrowth=filtered.filter(c=>c.growthMomentum>0).length;
+  const filtered = useMemo(()=>data.filter(c=>sector==="All"||c.sector===sector),[data, sector]);
+  const sectorData = useMemo(()=>buildSectorRollup(filtered),[filtered]);
+  const countryData = useMemo(()=>buildCountryRollup(filtered),[filtered]);
+  const countryDetail = useMemo(()=>countryData.find(c=>c.country===country)||countryData[0]||{},[countryData, country]);
+  const countryCompanies = useMemo(()=>data.filter(c=>c.country===country),[data, country]);
+  const wfItems = useMemo(()=>buildWaterfall(data, country),[data, country]);
 
+  const selectedCompany = useMemo(()=>{
+    if(companyId===null)return null;
+    return countryCompanies.find(c=>c.id===companyId)||null;
+  },[companyId,countryCompanies]);
+
+  const companyCandidates = useMemo(()=>{
+    const q=companyQuery.trim().toLowerCase();
+    const base=[...countryCompanies].sort((a,b)=>b.capitalGravity-a.capitalGravity);
+    const list=q?base.filter(c=>c.name.toLowerCase().includes(q)):base;
+    return list.slice(0,60);
+  },[countryCompanies,companyQuery]);
+
+  const companyWfItems = useMemo(()=>selectedCompany?buildCompanyWaterfall(selectedCompany):null,[selectedCompany]);
+  const companySeries = useMemo(()=>selectedCompany?buildCompanySeries(selectedCompany,50):null,[selectedCompany]);
+  
+  // Aggregates
+  const totalCap = filtered.reduce((a,c)=>a+c.capitalGravity,0);
+  const totalRev = filtered.reduce((a,c)=>a+c.revenueFlow,0);
+  const avgVal = filtered.reduce((a,c)=>a+c.valuationIndex,0)/(filtered.length||1);
+  const posGrowth = filtered.filter(c=>c.growthMomentum>0).length;
+
+  // Visual enhancements
   const sp1=Array.from({length:20},(_,i)=>2800+Math.sin(i*.7)*200+rnd(-80,80));
   const sp2=Array.from({length:20},(_,i)=>totalRev/18+Math.sin(i*.5)*200+rnd(-80,80));
   const sp3=Array.from({length:20},(_,i)=>avgVal+Math.sin(i*.9)*8+rnd(-4,4));
@@ -278,23 +356,16 @@ export default function App(){
   const TABS=[
     {id:"global",label:"Global Overview"},
     {id:"sectors",label:"Sector Intelligence"},
-    {id:"timeseries",label:"Market Pulse"},
-    {id:"landscape",label:"Alpha Landscape"},
     {id:"country",label:"Country Analysis"},
   ];
 
-  const sectorCountryCross=useMemo(()=>{
-    return COUNTRIES.slice(0,6).map(cn=>({
-      country:cn.split(" ")[0],
-      ...Object.fromEntries(SECTORS.slice(0,5).map(s=>[s,COMPANIES.filter(c=>c.country===cn&&c.sector===s).reduce((a,c)=>a+c.capitalGravity,0).toFixed(0)]))
-    }));
-  },[]);
+  if (data.length === 0) {
+    return <div style={{height:"100vh",display:"flex",alignItems:"center",justifyContent:"center",color:P.slateD}}>Initializing Data Pipeline...</div>
+  }
 
   return(
     <>
-     
       <div className="root">
-
         {/* ═══ HEADER ════════════════════════════════════════════════════════ */}
         <div style={{padding:"22px 28px 0",display:"flex",flexDirection:"column",gap:14}}>
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:14}}>
@@ -344,7 +415,7 @@ export default function App(){
               <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(185px,1fr))",gap:14}}>
                 {[
                   {label:"Capital Gravity",value:`$${(totalCap/1000).toFixed(1)}T`,delta:"+4.2%",up:true,spark:sp1,color:P.gold},
-                  {label:"Revenue Flow",value:`$${totalRev.toFixed(0)}B`,delta:"+1.9%",up:true,spark:sp2,color:P.sky},
+                  {label:"Revenue Flow",value:`$${(totalRev/1000).toFixed(1)}T`,delta:"+1.9%",up:true,spark:sp2,color:P.sky},
                   {label:"Valuation Index",value:`${avgVal.toFixed(1)}x`,delta:"-0.3%",up:false,spark:sp3,color:P.violet},
                   {label:"Growth Engines",value:posGrowth,delta:`of ${filtered.length}`,up:true,spark:null,color:P.emerald},
                   {label:"Economies Covered",value:COUNTRIES.length,delta:"Nations",up:null,spark:null,color:P.amber},
@@ -381,7 +452,7 @@ export default function App(){
                   <ResponsiveContainer width="100%" height={240}>
                     <PieChart>
                       <Pie data={sectorData} dataKey="revenueFlow" nameKey="sector" cx="50%" cy="50%" innerRadius={65} outerRadius={100} paddingAngle={4}>
-                        {sectorData.map((_,i)=>(<Cell key={i} fill={ACCENT[i]} fillOpacity={.82} stroke="rgba(0,0,0,.3)" strokeWidth={1}/>))}
+                        {sectorData.map((s,i)=>(<Cell key={i} fill={s.color} fillOpacity={.82} stroke="rgba(0,0,0,.3)" strokeWidth={1}/>))}
                       </Pie>
                       <Tooltip content={<TT/>}/>
                     </PieChart>
@@ -403,7 +474,7 @@ export default function App(){
                       <YAxis type="category" dataKey="country" tick={{fill:P.slate,fontSize:11,fontFamily:"Plus Jakarta Sans",fontWeight:500}} tickLine={false} width={105}/>
                       <Tooltip content={<TT/>}/>
                       <Bar dataKey="capitalGravity" name="Capital Gravity" radius={[0,5,5,0]}>
-                        {countryData.slice(0,8).map((_,i)=>(<Cell key={i} fill={ACCENT[i%ACCENT.length]} fillOpacity={.78}/>))}
+                        {countryData.slice(0,8).map((c,i)=>(<Cell key={i} fill={c.color} fillOpacity={.78}/>))}
                       </Bar>
                     </BarChart>
                   </ResponsiveContainer>
@@ -420,61 +491,18 @@ export default function App(){
                         if(!active||!payload?.length)return null;
                         const d=payload[0]?.payload;
                         return<div style={{background:"#111827",border:"1px solid rgba(255,255,255,.1)",borderRadius:10,padding:"10px 14px",fontSize:12}}>
-                          <div style={{color:P.gold,fontWeight:700}}>{d?.flag} {d?.country}</div>
+                          <div style={{color:P.gold,fontWeight:700}}>{d?.country}</div>
                           <div style={{color:P.slateD,marginTop:4}}>Growth: <span style={{color:P.emerald,fontFamily:"DM Mono"}}>{d?.avgGrowth?.toFixed(1)}%</span></div>
                           <div style={{color:P.slateD}}>Liquidity: <span style={{color:P.sky,fontFamily:"DM Mono"}}>{d?.avgLiquidity?.toFixed(0)}</span></div>
                         </div>;
                       }}/>
                       <ReferenceLine x={0} stroke="rgba(255,255,255,.1)" strokeDasharray="3 3"/>
                       <Scatter data={countryData}>
-                        {countryData.map((_,i)=>(<Cell key={i} fill={ACCENT[i%ACCENT.length]} fillOpacity={.8}/>))}
+                        {countryData.map((c,i)=>(<Cell key={i} fill={c.color} fillOpacity={.8}/>))}
                       </Scatter>
                     </ScatterChart>
                   </ResponsiveContainer>
                 </div>
-              </div>
-
-              {/* Sector × Country Cross-tab */}
-              <div className="card" style={{padding:"22px"}}>
-                <div className="clabel">Capital Gravity — Sector × Economy Heatmap</div>
-                <div style={{overflowX:"auto"}}>
-                  <table style={{borderCollapse:"collapse",width:"100%",fontSize:12}}>
-                    <thead>
-                      <tr style={{borderBottom:`1px solid ${P.border}`}}>
-                        <th style={{padding:"8px 14px",textAlign:"left",fontSize:9,color:P.slateD,fontWeight:700,letterSpacing:".1em",textTransform:"uppercase"}}>Economy</th>
-                        {SECTORS.slice(0,5).map(s=><th key={s} style={{padding:"8px 10px",textAlign:"center",fontSize:9,color:P.slateD,fontWeight:700,letterSpacing:".1em",textTransform:"uppercase"}}>{s}</th>)}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {sectorCountryCross.map((row,ri)=>{
-                        const vals=SECTORS.slice(0,5).map(s=>parseFloat(row[s])||0);
-                        const maxV=Math.max(...vals);
-                        return(
-                          <tr key={ri} className="trow">
-                            <td style={{padding:"10px 14px",color:P.white,fontWeight:600}}>{COUNTRY_ISO[COUNTRIES[ri]]} {COUNTRIES[ri].split(" ")[0]}</td>
-                            {SECTORS.slice(0,5).map((s,si)=>{
-                              const v=parseFloat(row[s])||0;
-                              const pct=maxV>0?v/maxV:0;
-                              return(
-                                <td key={si} style={{padding:"6px 8px",textAlign:"center"}}>
-                                  <div style={{background:`rgba(232,184,75,${pct*.6+.05})`,borderRadius:6,padding:"7px 4px",fontFamily:"DM Mono",fontSize:11,color:P.white,fontWeight:500,opacity:.5+pct*.5}}>
-                                    {(v/1000).toFixed(1)}T
-                                  </div>
-                                </td>
-                              );
-                            })}
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-
-              {/* Activity Calendar */}
-              <div className="card" style={{padding:"22px"}}>
-                <div className="clabel">Market Activity Intensity — Annual Calendar View</div>
-                <HeatMap data={HEAT_DATA}/>
               </div>
 
               {/* Leaderboard */}
@@ -495,7 +523,7 @@ export default function App(){
                           <td style={{padding:"10px 12px",color:P.slateD,fontFamily:"DM Mono",fontSize:11}}>{String(i+1).padStart(2,"0")}</td>
                           <td style={{padding:"10px 12px",color:P.white,fontWeight:600}}>{c.name}</td>
                           <td style={{padding:"10px 12px"}}><span className="badge" style={{background:SECTOR_COLORS[c.sector]+"18",color:SECTOR_COLORS[c.sector]}}>{c.sector}</span></td>
-                          <td style={{padding:"10px 12px",color:P.slate,fontSize:12}}>{COUNTRY_ISO[c.country]} {c.country.split(" ")[0]}</td>
+                          <td style={{padding:"10px 12px",color:P.slate,fontSize:12}}>{c.country}</td>
                           <td style={{padding:"10px 12px",fontFamily:"DM Mono",color:P.gold,fontSize:12}}>{c.capitalGravity.toFixed(1)}B</td>
                           <td style={{padding:"10px 12px",fontFamily:"DM Mono",color:P.sky,fontSize:12}}>{c.revenueFlow.toFixed(1)}B</td>
                           <td style={{padding:"10px 12px",fontFamily:"DM Mono",color:c.valuationIndex>60?P.rose:P.amber,fontSize:12}}>{c.valuationIndex.toFixed(1)}x</td>
@@ -513,42 +541,6 @@ export default function App(){
           {/* ░░ SECTOR INTELLIGENCE ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ */}
           {tab==="sectors"&&(
             <>
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:18}}>
-                <div className="card" style={{padding:"22px"}}>
-                  <div className="clabel">Multi-Metric Sector Radar</div>
-                  <ResponsiveContainer width="100%" height={320}>
-                    <RadarChart data={sectorData.map(s=>({sector:s.short,"Capital":Math.min(100,s.capitalGravity/200),"Revenue":Math.min(100,s.revenueFlow/60),"Yield":Math.min(100,s.netYield*5),"Valuation":Math.min(100,s.avgValuation*1.1),"Growth":Math.min(100,s.avgGrowth*3+50)}))} margin={{top:10,right:30,bottom:10,left:30}}>
-                      <PolarGrid stroke="rgba(255,255,255,.08)"/>
-                      <PolarAngleAxis dataKey="sector" tick={{fill:P.slate,fontFamily:"Plus Jakarta Sans",fontSize:11,fontWeight:600}}/>
-                      <PolarRadiusAxis tick={false} axisLine={false} domain={[0,100]}/>
-                      <Radar name="Capital Gravity" dataKey="Capital"   stroke={P.gold}    fill={P.gold}    fillOpacity={.15} strokeWidth={2}/>
-                      <Radar name="Revenue Flow"    dataKey="Revenue"   stroke={P.sky}     fill={P.sky}     fillOpacity={.1}  strokeWidth={2}/>
-                      <Radar name="Net Yield"       dataKey="Yield"     stroke={P.emerald} fill={P.emerald} fillOpacity={.1}  strokeWidth={2}/>
-                      <Radar name="Growth Momentum" dataKey="Growth"    stroke={P.rose}    fill={P.rose}    fillOpacity={.08} strokeWidth={2}/>
-                      <Legend wrapperStyle={{fontFamily:"Plus Jakarta Sans",fontSize:11,color:P.slateD}}/>
-                      <Tooltip content={<TT/>}/>
-                    </RadarChart>
-                  </ResponsiveContainer>
-                </div>
-                <div className="card" style={{padding:"22px"}}>
-                  <div className="clabel">Net Yield vs Revenue — Composite View</div>
-                  <ResponsiveContainer width="100%" height={320}>
-                    <ComposedChart data={sectorData} margin={{left:0,right:0}}>
-                      <CartesianGrid stroke="rgba(255,255,255,.05)" strokeDasharray="4 4"/>
-                      <XAxis dataKey="short" tick={{fill:P.slateD,fontSize:11}} tickLine={false} axisLine={false}/>
-                      <YAxis yAxisId="l" tick={{fill:P.slateD,fontSize:10}} tickLine={false} axisLine={false}/>
-                      <YAxis yAxisId="r" orientation="right" tick={{fill:P.slateD,fontSize:10}} tickLine={false} axisLine={false}/>
-                      <Tooltip content={<TT/>}/>
-                      <Bar yAxisId="l" dataKey="revenueFlow" name="Revenue Flow" radius={[4,4,0,0]}>
-                        {sectorData.map((_,i)=>(<Cell key={i} fill={ACCENT[i]} fillOpacity={.65}/>))}
-                      </Bar>
-                      <Line yAxisId="r" type="monotone" dataKey="netYield" name="Net Yield" stroke={P.gold} strokeWidth={2.5} dot={{fill:P.gold,r:4,strokeWidth:0}}/>
-                    </ComposedChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-
-              {/* Sector Cards Grid */}
               <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(210px,1fr))",gap:14}}>
                 {sectorData.map((s,i)=>(
                   <div key={s.sector} className="card-flat fu" style={{padding:"18px",animationDelay:`${i*.04}s`,borderLeft:`3px solid ${s.color}`}}>
@@ -576,179 +568,6 @@ export default function App(){
                   </div>
                 ))}
               </div>
-
-              <div className="card" style={{padding:"22px"}}>
-                <div className="clabel">Valuation Index vs Liquidity Score — Sector Benchmark</div>
-                <ResponsiveContainer width="100%" height={230}>
-                  <BarChart data={sectorData} margin={{left:0,right:0}}>
-                    <CartesianGrid stroke="rgba(255,255,255,.05)" strokeDasharray="4 4"/>
-                    <XAxis dataKey="short" tick={{fill:P.slateD,fontSize:11}} tickLine={false} axisLine={false}/>
-                    <YAxis tick={{fill:P.slateD,fontSize:10}} tickLine={false} axisLine={false}/>
-                    <Tooltip content={<TT/>}/>
-                    <Legend wrapperStyle={{fontFamily:"Plus Jakarta Sans",fontSize:11,color:P.slateD}}/>
-                    <Bar dataKey="avgValuation" name="Valuation Index" fill={P.violet} fillOpacity={.75} radius={[3,3,0,0]}/>
-                    <Bar dataKey="avgLiquidity" name="Liquidity Score" fill={P.sky}    fillOpacity={.75} radius={[3,3,0,0]}/>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
-            </>
-          )}
-
-          {/* ░░ MARKET PULSE ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ */}
-          {tab==="timeseries"&&(
-            <>
-              <div className="card" style={{padding:"22px"}}>
-                <div className="clabel">60-Day Capital Flow Streams — All Sectors</div>
-                <ResponsiveContainer width="100%" height={320}>
-                  <AreaChart data={TIME_DATA} margin={{left:0,right:10}}>
-                    <defs>
-                      {SECTORS.slice(0,5).map((s,i)=>(
-                        <linearGradient key={s} id={`ag${i}`} x1="0" y1="0" x2="0" y2="1">
-                          <stop offset="5%" stopColor={ACCENT[i]} stopOpacity={.5}/>
-                          <stop offset="95%" stopColor={ACCENT[i]} stopOpacity={.02}/>
-                        </linearGradient>
-                      ))}
-                    </defs>
-                    <CartesianGrid stroke="rgba(255,255,255,.05)" strokeDasharray="4 4"/>
-                    <XAxis dataKey="label" tick={{fill:P.slateD,fontSize:10}} tickLine={false} axisLine={false}/>
-                    <YAxis tick={{fill:P.slateD,fontSize:10}} tickLine={false} axisLine={false}/>
-                    <Tooltip content={<TT/>}/>
-                    <Legend wrapperStyle={{fontFamily:"Plus Jakarta Sans",fontSize:11,color:P.slateD}}/>
-                    <Brush dataKey="label" height={22} stroke={P.border} fill="rgba(0,0,0,.3)" travellerWidth={6}/>
-                    {SECTORS.slice(0,5).map((s,i)=>(
-                      <Area key={s} type="monotone" dataKey={s} stroke={ACCENT[i]} fill={`url(#ag${i})`} strokeWidth={2} dot={false}/>
-                    ))}
-                  </AreaChart>
-                </ResponsiveContainer>
-              </div>
-
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:18}}>
-                <div className="card" style={{padding:"22px"}}>
-                  <div className="clabel">Global Index Trajectory</div>
-                  <ResponsiveContainer width="100%" height={230}>
-                    <LineChart data={TIME_DATA} margin={{left:0,right:10}}>
-                      <CartesianGrid stroke="rgba(255,255,255,.05)" strokeDasharray="4 4"/>
-                      <XAxis dataKey="label" tick={{fill:P.slateD,fontSize:10}} tickLine={false} axisLine={false}/>
-                      <YAxis tick={{fill:P.slateD,fontSize:10}} tickLine={false} axisLine={false}/>
-                      <Tooltip content={<TT/>}/>
-                      <Legend wrapperStyle={{fontFamily:"Plus Jakarta Sans",fontSize:11,color:P.slateD}}/>
-                      <Line type="monotone" dataKey="GlobalIndex" name="Global Index" stroke={P.gold} strokeWidth={2.5} dot={false} style={{filter:`drop-shadow(0 0 4px ${P.gold}88)`}}/>
-                      <Line type="monotone" dataKey="Technology"  name="Technology"   stroke={P.sky}  strokeWidth={1.5} dot={false} strokeDasharray="5 3"/>
-                    </LineChart>
-                  </ResponsiveContainer>
-                </div>
-                <div className="card" style={{padding:"22px"}}>
-                  <div className="clabel">Stacked Volume — Top 3 Sectors</div>
-                  <ResponsiveContainer width="100%" height={230}>
-                    <BarChart data={TIME_DATA.filter((_,i)=>i%3===0)} margin={{left:0,right:0}}>
-                      <CartesianGrid stroke="rgba(255,255,255,.05)" strokeDasharray="4 4"/>
-                      <XAxis dataKey="label" tick={{fill:P.slateD,fontSize:10}} tickLine={false} axisLine={false}/>
-                      <YAxis tick={{fill:P.slateD,fontSize:10}} tickLine={false} axisLine={false}/>
-                      <Tooltip content={<TT/>}/>
-                      <Legend wrapperStyle={{fontFamily:"Plus Jakarta Sans",fontSize:11,color:P.slateD}}/>
-                      <Bar dataKey="Technology" name="Technology" stackId="s" fill={ACCENT[0]} fillOpacity={.8}/>
-                      <Bar dataKey="Finance"    name="Finance"    stackId="s" fill={ACCENT[1]} fillOpacity={.8}/>
-                      <Bar dataKey="Healthcare" name="Healthcare" stackId="s" fill={ACCENT[2]} fillOpacity={.8} radius={[3,3,0,0]}/>
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-
-              <div className="card" style={{padding:"22px"}}>
-                <div className="clabel">Momentum Bands — Energy & Consumer</div>
-                <ResponsiveContainer width="100%" height={220}>
-                  <ComposedChart data={TIME_DATA} margin={{left:0,right:10}}>
-                    <CartesianGrid stroke="rgba(255,255,255,.05)" strokeDasharray="4 4"/>
-                    <XAxis dataKey="label" tick={{fill:P.slateD,fontSize:10}} tickLine={false} axisLine={false}/>
-                    <YAxis tick={{fill:P.slateD,fontSize:10}} tickLine={false} axisLine={false}/>
-                    <Tooltip content={<TT/>}/>
-                    <Legend wrapperStyle={{fontFamily:"Plus Jakarta Sans",fontSize:11,color:P.slateD}}/>
-                    <Area type="monotone" dataKey="Energy"   name="Energy Band"   fill={P.amber}  stroke={P.amber}  strokeWidth={0} fillOpacity={.12}/>
-                    <Line type="monotone" dataKey="Energy"   name="Energy"        stroke={P.amber}  strokeWidth={2} dot={false}/>
-                    <Line type="monotone" dataKey="Consumer" name="Consumer"      stroke={P.violet} strokeWidth={2} dot={false}/>
-                  </ComposedChart>
-                </ResponsiveContainer>
-              </div>
-            </>
-          )}
-
-          {/* ░░ ALPHA LANDSCAPE ░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░░ */}
-          {tab==="landscape"&&(
-            <>
-              <div className="card" style={{padding:"22px"}}>
-                <div className="clabel">Alpha Landscape — Growth Momentum × Liquidity × Capital Gravity</div>
-                <ResponsiveContainer width="100%" height={300}>
-                  <ScatterChart margin={{left:0,right:0,top:10}}>
-                    <CartesianGrid stroke="rgba(255,255,255,.05)" strokeDasharray="4 4"/>
-                    <XAxis dataKey="growthMomentum" name="Growth Momentum" tick={{fill:P.slateD,fontSize:10}} tickLine={false} axisLine={false} label={{value:"Growth Momentum →",fill:P.slateD,fontSize:9,position:"insideBottom",offset:-2}}/>
-                    <YAxis dataKey="liquidityScore" name="Liquidity Score" tick={{fill:P.slateD,fontSize:10}} tickLine={false} axisLine={false}/>
-                    <ZAxis dataKey="capitalGravity" range={[25,280]}/>
-                    <Tooltip content={({active,payload})=>{
-                      if(!active||!payload?.length)return null;
-                      const d=payload[0]?.payload;
-                      return<div style={{background:"#111827",border:"1px solid rgba(255,255,255,.1)",borderRadius:10,padding:"10px 14px",fontSize:12}}>
-                        <div style={{color:P.gold,fontWeight:700,marginBottom:4}}>{d?.name}</div>
-                        <div style={{color:P.slateD}}>Sector: <span style={{color:SECTOR_COLORS[d?.sector]}}>{d?.sector}</span></div>
-                        <div style={{color:P.slateD}}>Growth: <span style={{color:d?.growthMomentum>0?P.emerald:P.rose,fontFamily:"DM Mono"}}>{d?.growthMomentum?.toFixed(1)}%</span></div>
-                        <div style={{color:P.slateD}}>Liquidity: <span style={{color:P.sky,fontFamily:"DM Mono"}}>{d?.liquidityScore?.toFixed(0)}</span></div>
-                        <div style={{color:P.slateD}}>Capital: <span style={{color:P.white,fontFamily:"DM Mono"}}>{d?.capitalGravity?.toFixed(0)}B</span></div>
-                      </div>;
-                    }}/>
-                    <ReferenceLine x={0} stroke="rgba(255,255,255,.12)" strokeDasharray="4 4"/>
-                    <Scatter data={filtered.slice(0,70)}>
-                      {filtered.slice(0,70).map((c,i)=>(<Cell key={i} fill={SECTOR_COLORS[c.sector]} fillOpacity={.72}/>))}
-                    </Scatter>
-                  </ScatterChart>
-                </ResponsiveContainer>
-              </div>
-
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:18}}>
-                <div className="card" style={{padding:"22px"}}>
-                  <div className="clabel">Efficiency Ratio Distribution</div>
-                  <ResponsiveContainer width="100%" height={260}>
-                    <BarChart data={Array.from({length:20},(_,i)=>{
-                      const count=filtered.filter(c=>c.efficiencyRatio>=i*.05&&c.efficiencyRatio<(i+1)*.05).length;
-                      return{bin:`${(i*5)}%`,count};
-                    })} margin={{left:0,right:0}}>
-                      <CartesianGrid stroke="rgba(255,255,255,.05)" strokeDasharray="4 4"/>
-                      <XAxis dataKey="bin" tick={{fill:P.slateD,fontSize:9}} tickLine={false} axisLine={false}/>
-                      <YAxis tick={{fill:P.slateD,fontSize:10}} tickLine={false} axisLine={false}/>
-                      <Tooltip content={<TT/>}/>
-                      <Bar dataKey="count" name="Entity Count" radius={[3,3,0,0]}>
-                        {Array.from({length:20},(_,i)=>(<Cell key={i} fill={ACCENT[i%ACCENT.length]} fillOpacity={.72}/>))}
-                      </Bar>
-                    </BarChart>
-                  </ResponsiveContainer>
-                </div>
-                <div className="card" style={{padding:"22px"}}>
-                  <div className="clabel">Valuation Index vs Share Price</div>
-                  <ResponsiveContainer width="100%" height={260}>
-                    <ScatterChart margin={{left:0,right:10,top:5}}>
-                      <CartesianGrid stroke="rgba(255,255,255,.05)" strokeDasharray="4 4"/>
-                      <XAxis dataKey="valuationIndex" name="Valuation Index" tick={{fill:P.slateD,fontSize:10}} tickLine={false} axisLine={false}/>
-                      <YAxis dataKey="sharePrice" name="Share Price" tick={{fill:P.slateD,fontSize:10}} tickLine={false} axisLine={false}/>
-                      <ZAxis dataKey="capitalGravity" range={[20,180]}/>
-                      <Tooltip content={({active,payload})=>{
-                        if(!active||!payload?.length)return null;
-                        const d=payload[0]?.payload;
-                        return<div style={{background:"#111827",border:"1px solid rgba(255,255,255,.1)",borderRadius:10,padding:"10px 14px",fontSize:12}}>
-                          <div style={{color:P.gold,fontWeight:700,marginBottom:4}}>{d?.name}</div>
-                          <div style={{color:P.slateD}}>Valuation: <span style={{color:P.violet,fontFamily:"DM Mono"}}>{d?.valuationIndex?.toFixed(1)}x</span></div>
-                          <div style={{color:P.slateD}}>Price: <span style={{color:P.amber,fontFamily:"DM Mono"}}>£{d?.sharePrice?.toFixed(0)}</span></div>
-                        </div>;
-                      }}/>
-                      <Scatter data={filtered.slice(0,80)}>
-                        {filtered.slice(0,80).map((c,i)=>(<Cell key={i} fill={SECTOR_COLORS[c.sector]} fillOpacity={.65}/>))}
-                      </Scatter>
-                    </ScatterChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-
-              <div className="card" style={{padding:"22px"}}>
-                <div className="clabel">Cross-Metric Correlation Matrix</div>
-                <CorrMatrix/>
-              </div>
             </>
           )}
 
@@ -758,80 +577,105 @@ export default function App(){
               <div style={{display:"flex",alignItems:"center",gap:14,flexWrap:"wrap"}}>
                 <span style={{fontWeight:700,color:P.white,fontSize:14}}>Analyzing Economy:</span>
                 <select className="sel" style={{minWidth:230,fontSize:15,fontWeight:600}} value={country} onChange={e=>setCountry(e.target.value)}>
-                  {COUNTRIES.map(c=><option key={c} value={c}>{COUNTRY_ISO[c]} {c}</option>)}
+                  {COUNTRIES.map(c=><option key={c} value={c}>{c}</option>)}
                 </select>
-                <div className="dot"/>
-                <span style={{fontSize:11,color:P.slateD}}>Live intelligence active</span>
+                <input className="inp" value={companyQuery} onChange={e=>setCompanyQuery(e.target.value)} placeholder={`Search company in ${country}…`}/>
+                <select className="sel" style={{minWidth:320}} value={companyId??""} onChange={e=>setCompanyId(e.target.value===""?null:Number(e.target.value))}>
+                  <option value="">Economy view (all companies)</option>
+                  {companyCandidates.map(c=>(
+                    <option key={c.id} value={c.id}>{c.name} — {c.sector}</option>
+                  ))}
+                </select>
+                {selectedCompany&&(
+                  <span className="badge" style={{background:SECTOR_COLORS[selectedCompany.sector]+"18",color:SECTOR_COLORS[selectedCompany.sector]}}>
+                    Company Lens: {selectedCompany.name}
+                  </span>
+                )}
               </div>
 
-              {/* Country KPIs */}
-              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(175px,1fr))",gap:14}}>
-                {[
-                  {label:"Capital Gravity",val:`$${(countryDetail.capitalGravity/1000).toFixed(2)}T`,color:P.gold},
-                  {label:"Revenue Flow",val:`$${countryDetail.revenueFlow.toFixed(0)}B`,color:P.sky},
-                  {label:"Net Yield",val:`$${countryDetail.netYield.toFixed(0)}B`,color:P.emerald},
-                  {label:"Valuation Index",val:`${countryDetail.avgValuation.toFixed(1)}x`,color:P.violet},
-                  {label:"Growth Momentum",val:`${countryDetail.avgGrowth>0?"+":""}${countryDetail.avgGrowth.toFixed(1)}%`,color:countryDetail.avgGrowth>0?P.emerald:P.rose},
-                  {label:"Liquidity Score",val:countryDetail.avgLiquidity.toFixed(0),color:P.amber},
-                  {label:"Risk Coefficient",val:countryDetail.avgRisk.toFixed(0),color:P.rose},
-                  {label:"Entities Tracked",val:countryDetail.count,color:P.slate},
-                ].map((k,i)=>(
-                  <div key={i} className="card fu" style={{padding:"16px 18px",animationDelay:`${i*.04}s`}}>
-                    <div className="kl">{k.label}</div>
-                    <div style={{fontFamily:"'DM Mono',monospace",fontSize:20,fontWeight:500,color:k.color,marginTop:6}}>{k.val}</div>
-                  </div>
-                ))}
-              </div>
-
-              {/* Sector Pie + Waterfall */}
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:18}}>
-                <div className="card" style={{padding:"22px"}}>
-                  <div className="clabel">Sector Contribution — {country.split(" ")[0]}</div>
-                  <ResponsiveContainer width="100%" height={270}>
-                    <PieChart>
-                      <Pie data={SECTORS.map(s=>({name:s,value:countryCompanies.filter(c=>c.sector===s).reduce((a,c)=>a+c.capitalGravity,0)})).filter(d=>d.value>0)}
-                        dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={55} outerRadius={95} paddingAngle={3}>
-                        {SECTORS.map((s,i)=>(<Cell key={i} fill={SECTOR_COLORS[s]} fillOpacity={.82} stroke="rgba(0,0,0,.3)" strokeWidth={1}/>))}
-                      </Pie>
-                      <Tooltip content={<TT/>}/>
-                      <Legend wrapperStyle={{fontFamily:"Plus Jakarta Sans",fontSize:11,color:P.slateD}}/>
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
-                <div className="card" style={{padding:"22px"}}>
-                  <div className="clabel">Revenue Waterfall — {country.split(" ")[0]}</div>
-                  <Waterfall items={wfItems}/>
-                  <div style={{display:"flex",gap:14,marginTop:10}}>
-                    {[{c:P.gold,l:"Total"},{c:P.emerald,l:"Inflow"},{c:P.rose,l:"Outflow"}].map(d=>(
-                      <div key={d.l} style={{display:"flex",alignItems:"center",gap:5}}><div style={{width:10,height:10,borderRadius:2,background:d.c}}/><span style={{fontSize:10,color:P.slateD}}>{d.l}</span></div>
+              {selectedCompany ? (
+                <>
+                  {/* Company KPIs */}
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(175px,1fr))",gap:14}}>
+                    {[
+                      {label:"Capital Gravity",val:`$${selectedCompany.capitalGravity.toFixed(1)}B`,color:P.gold},
+                      {label:"Revenue Flow",val:`$${selectedCompany.revenueFlow.toFixed(1)}B`,color:P.sky},
+                      {label:"Net Yield",val:`$${selectedCompany.netYield.toFixed(1)}B`,color:P.emerald},
+                      {label:"Valuation Index",val:`${selectedCompany.valuationIndex.toFixed(1)}x`,color:P.violet},
+                      {label:"Share Price",val:`£${selectedCompany.sharePrice.toFixed(0)}`,color:P.amber},
+                      {label:"Growth Momentum",val:`${selectedCompany.growthMomentum>0?"+":""}${selectedCompany.growthMomentum.toFixed(1)}%`,color:selectedCompany.growthMomentum>0?P.emerald:P.rose},
+                      {label:"Liquidity Score",val:selectedCompany.liquidityScore.toFixed(0),color:P.sky},
+                      {label:"Risk Coefficient",val:selectedCompany.riskCoefficient.toFixed(0),color:P.rose},
+                    ].map((k,i)=>(
+                      <div key={i} className="card fu" style={{padding:"16px 18px",animationDelay:`${i*.04}s`}}>
+                        <div className="kl">{k.label}</div>
+                        <div style={{fontFamily:"'DM Mono',monospace",fontSize:20,fontWeight:500,color:k.color,marginTop:6}}>{k.val}</div>
+                      </div>
                     ))}
                   </div>
-                </div>
-              </div>
 
-              {/* Country Radar + Company Table */}
-              <div style={{display:"grid",gridTemplateColumns:"1fr 1.5fr",gap:18}}>
-                <div className="card" style={{padding:"22px"}}>
-                  <div className="clabel">{country.split(" ")[0]} — Economic Profile Radar</div>
-                  <ResponsiveContainer width="100%" height={290}>
-                    <RadarChart data={[
-                      {metric:"Capital",  val:Math.min(100,countryDetail.capitalGravity/300)},
-                      {metric:"Revenue",  val:Math.min(100,countryDetail.revenueFlow/60)},
-                      {metric:"Yield",    val:Math.min(100,countryDetail.netYield*4)},
-                      {metric:"Momentum",val:Math.min(100,countryDetail.avgGrowth*3+50)},
-                      {metric:"Liquidity",val:countryDetail.avgLiquidity},
-                      {metric:"Efficiency",val:Math.min(100,countryDetail.efficiencyRatio*250)},
-                    ]} margin={{top:10,right:30,bottom:10,left:30}}>
-                      <PolarGrid stroke="rgba(255,255,255,.08)"/>
-                      <PolarAngleAxis dataKey="metric" tick={{fill:P.slate,fontFamily:"Plus Jakarta Sans",fontSize:11,fontWeight:600}}/>
-                      <PolarRadiusAxis domain={[0,100]} tick={false} axisLine={false}/>
-                      <Radar dataKey="val" name={country} stroke={P.gold} fill={P.gold} fillOpacity={.22} strokeWidth={2.5}/>
-                      <Tooltip content={<TT/>}/>
-                    </RadarChart>
-                  </ResponsiveContainer>
-                </div>
-                <div className="card" style={{padding:"22px"}}>
-                  <div className="clabel">Top Entities — {country.split(" ")[0]}</div>
+                  {/* Waterfall + Price Pulse */}
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:18}}>
+                    <div className="card" style={{padding:"22px"}}>
+                      <div className="clabel">Revenue Waterfall — {selectedCompany.name}</div>
+                      <Waterfall items={companyWfItems||[]}/>
+                    </div>
+                    <div className="card" style={{padding:"22px"}}>
+                      <div className="clabel">Share Price Pulse — 50 Day</div>
+                      <ResponsiveContainer width="100%" height={210}>
+                        <LineChart data={companySeries||[]} margin={{left:0,right:10,top:10,bottom:0}}>
+                          <CartesianGrid stroke="rgba(255,255,255,.05)" strokeDasharray="4 4"/>
+                          <XAxis dataKey="label" tick={{fill:P.slateD,fontSize:10}} tickLine={false} axisLine={false}/>
+                          <YAxis tick={{fill:P.slateD,fontSize:10}} tickLine={false} axisLine={false}/>
+                          <Tooltip content={<TT/>}/>
+                          <Line type="monotone" dataKey="Price" name="Share Price" stroke={P.gold} strokeWidth={2.5} dot={false} style={{filter:`drop-shadow(0 0 4px ${P.gold}88)`}}/>
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+                </>
+              ) : (
+                <>
+                  {/* Country KPIs */}
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(175px,1fr))",gap:14}}>
+                    {[
+                      {label:"Capital Gravity",val:`$${(countryDetail.capitalGravity/1000).toFixed(2)}T`,color:P.gold},
+                      {label:"Revenue Flow",val:`$${countryDetail.revenueFlow.toFixed(0)}B`,color:P.sky},
+                      {label:"Net Yield",val:`$${countryDetail.netYield.toFixed(0)}B`,color:P.emerald},
+                      {label:"Valuation Index",val:`${countryDetail.avgValuation.toFixed(1)}x`,color:P.violet},
+                      {label:"Entities Tracked",val:countryDetail.count,color:P.slate},
+                    ].map((k,i)=>(
+                      <div key={i} className="card fu" style={{padding:"16px 18px",animationDelay:`${i*.04}s`}}>
+                        <div className="kl">{k.label}</div>
+                        <div style={{fontFamily:"'DM Mono',monospace",fontSize:20,fontWeight:500,color:k.color,marginTop:6}}>{k.val}</div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Sector Pie + Waterfall */}
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:18}}>
+                    <div className="card" style={{padding:"22px"}}>
+                      <div className="clabel">Sector Contribution — {country}</div>
+                      <ResponsiveContainer width="100%" height={270}>
+                        <PieChart>
+                          <Pie data={SECTORS.map(s=>({name:s,value:countryCompanies.filter(c=>c.sector===s).reduce((a,c)=>a+c.capitalGravity,0)})).filter(d=>d.value>0)}
+                            dataKey="value" nameKey="name" cx="50%" cy="50%" innerRadius={55} outerRadius={95} paddingAngle={3}>
+                            {SECTORS.map((s,i)=>(<Cell key={i} fill={SECTOR_COLORS[s]} fillOpacity={.82} stroke="rgba(0,0,0,.3)" strokeWidth={1}/>))}
+                          </Pie>
+                          <Tooltip content={<TT/>}/>
+                          <Legend wrapperStyle={{fontFamily:"Plus Jakarta Sans",fontSize:11,color:P.slateD}}/>
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
+                    <div className="card" style={{padding:"22px"}}>
+                      <div className="clabel">Revenue Waterfall — {country}</div>
+                      <Waterfall items={wfItems}/>
+                    </div>
+                  </div>
+                  
+                  {/* Top Entities Table */}
+                  <div className="card" style={{padding:"22px"}}>
+                  <div className="clabel">Top Entities — {country}</div>
                   <div style={{maxHeight:270,overflowY:"auto"}}>
                     <table style={{width:"100%",borderCollapse:"collapse",fontSize:12}}>
                       <thead style={{position:"sticky",top:0,background:"#0d1220",zIndex:1}}>
@@ -855,29 +699,9 @@ export default function App(){
                     </table>
                   </div>
                 </div>
-              </div>
 
-              {/* vs Global Benchmark */}
-              <div className="card" style={{padding:"22px"}}>
-                <div className="clabel">{country} vs Global Benchmark — Comparative Analysis</div>
-                <ResponsiveContainer width="100%" height={240}>
-                  <BarChart layout="vertical" margin={{left:130,right:20}} data={[
-                    {metric:"Capital Gravity (T)",  country:countryDetail.capitalGravity/1000,global:totalCap/COUNTRIES.length/1000},
-                    {metric:"Revenue Flow (B)",     country:countryDetail.revenueFlow,        global:totalRev/COUNTRIES.length},
-                    {metric:"Valuation Index (x)",  country:countryDetail.avgValuation,       global:avgVal},
-                    {metric:"Growth Momentum (%)",  country:Math.max(0,countryDetail.avgGrowth+10),global:10},
-                    {metric:"Liquidity Score",      country:countryDetail.avgLiquidity,       global:filtered.reduce((a,c)=>a+c.liquidityScore,0)/(filtered.length||1)},
-                  ]}>
-                    <CartesianGrid stroke="rgba(255,255,255,.05)" horizontal={false}/>
-                    <XAxis type="number" tick={{fill:P.slateD,fontSize:10}} tickLine={false} axisLine={false}/>
-                    <YAxis type="category" dataKey="metric" tick={{fill:P.slate,fontSize:10,fontFamily:"Plus Jakarta Sans",fontWeight:500}} tickLine={false} width={135}/>
-                    <Tooltip content={<TT/>}/>
-                    <Legend wrapperStyle={{fontFamily:"Plus Jakarta Sans",fontSize:11,color:P.slateD}}/>
-                    <Bar dataKey="country" name={country}     fill={P.gold}   fillOpacity={.82} radius={[0,5,5,0]}/>
-                    <Bar dataKey="global"  name="Global Avg"  fill={P.slateD} fillOpacity={.35} radius={[0,5,5,0]}/>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>
+                </>
+              )}
             </>
           )}
 
@@ -886,7 +710,7 @@ export default function App(){
         {/* ═══ FOOTER ════════════════════════════════════════════════════════ */}
         <div style={{padding:"12px 28px",borderTop:`1px solid ${P.border}`,display:"flex",justifyContent:"space-between",alignItems:"center",flexWrap:"wrap",gap:8}}>
           <span style={{fontSize:10,color:P.slateD,fontWeight:500,letterSpacing:".1em"}}>
-            MERIDIAN ANALYTICS © 2025 — {filtered.length} entities · {COUNTRIES.length} economies · {SECTORS.length} sectors
+            MIT-WPU DEDV LAB © 2026 — {filtered.length} entities · {COUNTRIES.length} economies · {SECTORS.length} sectors
           </span>
           <div style={{display:"flex",gap:8,alignItems:"center"}}>
             <div className="dot"/>

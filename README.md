@@ -1,16 +1,57 @@
-# React + Vite
+# Meridian Analytics Dashboard
 
-This template provides a minimal setup to get React working in Vite with HMR and some ESLint rules.
+A high-performance, premium financial analytics platform built with React, Vite, and Recharts. This dashboard provides a comprehensive view of global capital intelligence across various sectors and economies.
 
-Currently, two official plugins are available:
+## 🚀 Key Features
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Babel](https://babeljs.io/) (or [oxc](https://oxc.rs) when used in [rolldown-vite](https://vite.dev/guide/rolldown)) for Fast Refresh
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/) for Fast Refresh
+- **Advanced Authentication**: Custom-built login/register system with session persistence.
+- **Global Overview**: Real-time KPI tracking for capital gravity, revenue flow, and valuation indices.
+- **Interactive Multi-Tab Intelligence**:
+  - **Sector Intelligence**: Deep dive into sector-specific capital and revenue distribution.
+  - **Country Analysis**: Economic data by nation with company-level granularity.
+  - **Portfolio Builder**: Simulate asset allocation and track weighted performance.
+  - **Peer Comparison**: Head-to-head metrics using radar and comparative charts.
+  - **Risk & Correlation**: Anomaly detection and metric correlation matrices.
+  - **Monte Carlo Simulation**: 200+ runs for value-at-risk (VaR) and return distribution.
+  - **Technical Indicators**: RSI, MACD, and Bollinger Bands tracking.
+- **Dynamic Data Processing**: Powered by `papaparse` for high-speed CSV ingestion.
+- **Premium UI/UX**: Dark mode aesthetic with particle canvas backgrounds and micro-animations.
 
-## React Compiler
+## 🛠️ Tech Stack
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+- **Frontend**: React 19, Vite
+- **Data Viz**: Recharts
+- **Parsing**: PapaParse
+- **Styling**: Vanilla CSS (Custom Meridian UI)
 
-## Expanding the ESLint configuration
+## 📦 Getting Started
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and [`typescript-eslint`](https://typescript-eslint.io) in your project.
+### Prerequisites
+
+- [Node.js](https://nodejs.org/) (v18 or higher recommended)
+- [npm](https://www.npmjs.com/)
+
+### Installation
+
+1. Install dependencies:
+   ```bash
+   npm install
+   ```
+
+2. Start the development server:
+   ```bash
+   npm run dev
+   ```
+
+3. Open your browser to `http://localhost:5173`.
+
+## 📂 Project Structure
+
+- `src/App.jsx`: Main dashboard logic and visualization components.
+- `src/AuthWrapper.jsx`: Authentication state management.
+- `src/Login.jsx`: User authentication interface.
+- `public/companies.csv`: Core dataset for analytics.
+
+## 🤝 Contributing
+
+This project is currently on the `trial` branch for experimentation and final staging before merging into `main`.
